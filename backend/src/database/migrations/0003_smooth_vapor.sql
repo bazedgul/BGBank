@@ -1,0 +1,1 @@
+ALTER TABLE "account_balance_projections" ALTER COLUMN "projection_version" SET DEFAULT 0;
