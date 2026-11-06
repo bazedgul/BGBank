@@ -392,3 +392,193 @@ export const outboxEvents = pgTable('outbox_events', {
     .notNull()
     .defaultNow(),
 });
+
+export const customerCredentials = pgTable('customer_credentials', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id),
+  loginIdentifier: varchar('login_identifier', { length: 320 })
+    .notNull()
+    .unique(),
+  passwordHash: text('password_hash').notNull(),
+  passwordAlgorithm: varchar('password_algorithm', { length: 32 })
+    .notNull()
+    .default('argon2id'),
+  failedAttempts: integer('failed_attempts').notNull().default(0),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  passwordChangedAt: timestamp('password_changed_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const customerSessions = pgTable('customer_sessions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id),
+  sessionClass: varchar('session_class', { length: 16 })
+    .notNull()
+    .default('customer'),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+  csrfTokenHash: varchar('csrf_token_hash', { length: 64 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  idleExpiresAt: timestamp('idle_expires_at', { withTimezone: true }).notNull(),
+  absoluteExpiresAt: timestamp('absolute_expires_at', {
+    withTimezone: true,
+  }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  userAgent: varchar('user_agent', { length: 512 }),
+  createdIp: text('created_ip'),
+});
+
+export const transfers = pgTable(
+  'transfers',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    actorUserId: uuid('actor_user_id')
+      .notNull()
+      .references(() => users.id),
+    sourceAccountId: uuid('source_account_id')
+      .notNull()
+      .references(() => accounts.id),
+    destinationAccountId: uuid('destination_account_id')
+      .notNull()
+      .references(() => accounts.id),
+    amountMinor: bigint('amount_minor', { mode: 'bigint' }).notNull(),
+    currency: varchar('currency', { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    state: varchar('state', { length: 16 }).notNull().default('created'),
+    journalId: uuid('journal_id').references(() => journals.id),
+    reference: varchar('reference', { length: 200 }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    postedAt: timestamp('posted_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('transfers_actor_created_idx').on(
+      table.actorUserId,
+      table.createdAt,
+      table.id,
+    ),
+    index('transfers_source_created_idx').on(
+      table.sourceAccountId,
+      table.createdAt,
+      table.id,
+    ),
+    index('transfers_destination_created_idx').on(
+      table.destinationAccountId,
+      table.createdAt,
+      table.id,
+    ),
+    check('transfers_amount_positive_check', sql`${table.amountMinor} > 0`),
+    check(
+      'transfers_distinct_accounts_check',
+      sql`${table.sourceAccountId} <> ${table.destinationAccountId}`,
+    ),
+    check(
+      'transfers_state_check',
+      sql`${table.state} IN ('created', 'posted', 'completed', 'rejected')`,
+    ),
+    check(
+      'transfers_state_journal_check',
+      sql`(
+    (${table.state} IN ('created', 'rejected') AND ${table.journalId} IS NULL AND ${table.postedAt} IS NULL AND ${table.completedAt} IS NULL)
+    OR (${table.state} = 'posted' AND ${table.journalId} IS NOT NULL AND ${table.postedAt} IS NOT NULL AND ${table.completedAt} IS NULL)
+    OR (${table.state} = 'completed' AND ${table.journalId} IS NOT NULL AND ${table.postedAt} IS NOT NULL AND ${table.completedAt} IS NOT NULL)
+  `,
+    ),
+    foreignKey({
+      columns: [table.sourceAccountId, table.currency],
+      foreignColumns: [accounts.id, accounts.currency],
+      name: 'transfers_currency_source_fk',
+    }),
+    foreignKey({
+      columns: [table.destinationAccountId, table.currency],
+      foreignColumns: [accounts.id, accounts.currency],
+      name: 'transfers_currency_destination_fk',
+    }),
+  ],
+);
+
+export const transferStateHistory = pgTable(
+  'transfer_state_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    transferId: uuid('transfer_id')
+      .notNull()
+      .references(() => transfers.id),
+    fromState: varchar('from_state', { length: 16 }),
+    toState: varchar('to_state', { length: 16 }).notNull(),
+    actorUserId: uuid('actor_user_id').references(() => users.id),
+    reason: varchar('reason', { length: 200 }).notNull(),
+    requestId: varchar('request_id', { length: 200 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('transfer_state_history_transfer_idx').on(
+      table.transferId,
+      table.createdAt,
+      table.id,
+    ),
+  ],
+);
+
+export const idempotencyKeys = pgTable(
+  'idempotency_keys',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    scope: varchar('scope', { length: 100 }).notNull(),
+    key: varchar('key', { length: 255 }).notNull(),
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    state: varchar('state', { length: 16 }).notNull().default('processing'),
+    transferId: uuid('transfer_id').references(() => transfers.id),
+    responseJson: jsonb('response_json'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    terminalAt: timestamp('terminal_at', { withTimezone: true }),
+    tombstoneUntil: timestamp('tombstone_until', { withTimezone: true }),
+  },
+  (table) => [
+    unique('idempotency_keys_scope_key_unique').on(table.scope, table.key),
+    index('idempotency_keys_cleanup_idx').on(table.tombstoneUntil),
+    check(
+      'idempotency_keys_hash_check',
+      sql`length(${table.requestHash}) = 64`,
+    ),
+    check(
+      'idempotency_keys_state_check',
+      sql`${table.state} IN ('processing', 'completed', 'rejected', 'tombstone')`,
+    ),
+    check(
+      'idempotency_keys_terminal_consistency_check',
+      sql`(
+    (${table.state} = 'processing' AND ${table.terminalAt} IS NULL)
+    OR (${table.state} IN ('completed', 'rejected', 'tombstone') AND ${table.terminalAt} IS NOT NULL)
+  `,
+    ),
+    check(
+      'idempotency_keys_completed_result_check',
+      sql`(
+    (${table.state} = 'completed' AND ${table.transferId} IS NOT NULL AND ${table.responseJson} IS NOT NULL)
+    OR ${table.state} <> 'completed'
+  `,
+    ),
+  ],
+);

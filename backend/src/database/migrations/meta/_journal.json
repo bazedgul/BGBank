@@ -1,4 +1,4 @@
-{
+  {
   "version": "7",
   "dialect": "postgresql",
   "entries": [
@@ -63,6 +63,41 @@
       "version": "7",
       "when": 1793905200000,
       "tag": "0008_phase_b_integrity_corrections",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793905600000,
+      "tag": "0009_phase_d_customer_transfers",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793906000000,
+      "tag": "0010_phase_d_transfer_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793906400000,
+      "tag": "0011_phase_d_identity_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793906800000,
+      "tag": "0012_identity_role_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793907200000,
+      "tag": "0013_identity_token_boundary",
       "breakpoints": true
     }
   ]
